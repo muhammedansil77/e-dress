@@ -1,0 +1,9 @@
+{
+  "name": "@apparel/web",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Customer storefront scaffold - Phase 5",
+  "scripts": {
+    "dev": "echo 'Storefront will be initialized in Phase 5'"
+  }
+}
