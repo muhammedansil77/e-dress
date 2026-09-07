@@ -29,3 +29,48 @@ export const authenticateAdmin = async (req: Request, _res: Response, next: Next
     next(error);
   }
 };
+
+export const authenticateCustomer = async (req: Request, _res: Response, next: NextFunction): Promise<void> => {
+  try {
+    let token: string | undefined;
+
+    const authHeader = req.headers.authorization;
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      token = authHeader.substring(7);
+    }
+
+    if (!token && req.cookies?.customerToken) {
+      token = req.cookies.customerToken;
+    }
+
+    if (!token) {
+      throw new UnauthorizedError('Customer authentication required. Please log in.');
+    }
+
+    const decoded = JwtUtils.verifyCustomerToken(token);
+    req.user = decoded;
+    next();
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const optionalCustomerAuth = async (req: Request, _res: Response, next: NextFunction): Promise<void> => {
+  try {
+    let token: string | undefined;
+    const authHeader = req.headers.authorization;
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      token = authHeader.substring(7);
+    }
+    if (!token && req.cookies?.customerToken) {
+      token = req.cookies.customerToken;
+    }
+    if (token) {
+      const decoded = JwtUtils.verifyCustomerToken(token);
+      req.user = decoded;
+    }
+  } catch {
+    // Continue as guest
+  }
+  next();
+};

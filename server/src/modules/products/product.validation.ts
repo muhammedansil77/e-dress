@@ -51,6 +51,11 @@ export const productQuerySchema = z.object({
   status: z.enum(['DRAFT', 'ACTIVE', 'INACTIVE', 'ARCHIVED']).optional(),
   isFeatured: z.string().transform((v) => v === 'true').optional(),
   inStock: z.string().transform((v) => v === 'true').optional(),
-  sortBy: z.enum(['price', 'createdAt', 'name', 'totalStock']).optional().default('createdAt'),
+  sizes: z.string().optional(),
+  colors: z.string().optional(),
+  minPrice: z.string().transform((val) => (val ? parseFloat(val) : undefined)).optional(),
+  maxPrice: z.string().transform((val) => (val ? parseFloat(val) : undefined)).optional(),
+  department: z.string().optional(),
+  sortBy: z.enum(['price', 'createdAt', 'name', 'totalStock', 'rating', 'discount']).optional().default('createdAt'),
   sortOrder: z.enum(['asc', 'desc']).optional().default('desc'),
 });

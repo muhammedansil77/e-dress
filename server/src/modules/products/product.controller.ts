@@ -18,6 +18,11 @@ export class ProductController {
     });
   });
 
+  public getFilterFacets = asyncHandler(async (_req: Request, res: Response) => {
+    const facets = await productService.getFilterFacets();
+    return ApiResponse.success(res, facets, 'Product filter facets retrieved successfully');
+  });
+
   public getProductById = asyncHandler(async (req: Request, res: Response) => {
     const product = await productService.getProductById(req.params.id);
     return ApiResponse.success(res, product, 'Product details retrieved successfully');

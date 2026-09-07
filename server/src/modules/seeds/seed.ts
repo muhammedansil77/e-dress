@@ -5,6 +5,7 @@ import { BrandModel } from '../brands/brand.model';
 import { SizeModel } from '../sizes/size.model';
 import { ColorModel } from '../colors/color.model';
 import { ProductModel } from '../products/product.model';
+import { UserModel } from '../users/user.model';
 import { AdminRole, ALL_PERMISSIONS } from '../../common/constants';
 import { PasswordUtils } from '../../common/utils/password.utils';
 import { slugify } from '../../common/utils/slugify';
@@ -302,6 +303,123 @@ async function runSeed() {
 
       console.log('  🥻 Seeded: Embroidered Silk Blend Festive Kurti Set (2 variants)');
     }
+  }
+
+  // 7. Seed Customers / Users
+  const userCount = await UserModel.countDocuments();
+  if (userCount === 0) {
+    console.log('🛍️ Seeding initial Customers with Wishlists & Carts...');
+    const customerPassword = await PasswordUtils.hash('Customer@123456');
+
+    // Fetch existing products to link
+    const products = await ProductModel.find({ isDeleted: false }).limit(2);
+    const firstProduct = products[0];
+    const secondProduct = products[1];
+
+    // Customer 1: Aanya Sharma (Active shopper with wishlist and cart)
+    await UserModel.create({
+      name: 'Aanya Sharma',
+      email: 'aanya.sharma@example.com',
+      password: customerPassword,
+      phone: '+91 98765 43210',
+      avatar: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=200&q=80',
+      status: 'ACTIVE',
+      addresses: [
+        {
+          fullName: 'Aanya Sharma',
+          phone: '+91 98765 43210',
+          street: 'Flat 402, Sea Green Apartments, Worli Sea Face',
+          city: 'Mumbai',
+          state: 'Maharashtra',
+          postalCode: '400018',
+          country: 'India',
+          isDefault: true,
+          type: 'HOME',
+        },
+        {
+          fullName: 'Aanya Sharma',
+          phone: '+91 98765 43210',
+          street: 'Level 12, Tower B, One International Center, Lower Parel',
+          city: 'Mumbai',
+          state: 'Maharashtra',
+          postalCode: '400013',
+          country: 'India',
+          isDefault: false,
+          type: 'WORK',
+        },
+      ],
+      wishlist: firstProduct ? [firstProduct._id] : [],
+      cart: firstProduct && firstProduct.variants?.[0] ? [
+        {
+          productId: firstProduct._id,
+          variantSku: firstProduct.variants[0].sku,
+          quantity: 2,
+          addedAt: new Date(),
+        },
+      ] : [],
+      lastLoginAt: new Date(),
+    });
+
+    // Customer 2: Priya Patel (Loyal shopper)
+    await UserModel.create({
+      name: 'Priya Patel',
+      email: 'priya.patel@example.com',
+      password: customerPassword,
+      phone: '+91 91234 56789',
+      avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=200&q=80',
+      status: 'ACTIVE',
+      addresses: [
+        {
+          fullName: 'Priya Patel',
+          phone: '+91 91234 56789',
+          street: 'No. 88, 4th Cross, Indiranagar',
+          city: 'Bengaluru',
+          state: 'Karnataka',
+          postalCode: '560038',
+          country: 'India',
+          isDefault: true,
+          type: 'HOME',
+        },
+      ],
+      wishlist: secondProduct ? [secondProduct._id] : [],
+      cart: secondProduct && secondProduct.variants?.[0] ? [
+        {
+          productId: secondProduct._id,
+          variantSku: secondProduct.variants[0].sku,
+          quantity: 1,
+          addedAt: new Date(),
+        },
+      ] : [],
+      lastLoginAt: new Date(),
+    });
+
+    // Customer 3: Rohan Verma (Blocked account for admin verification)
+    await UserModel.create({
+      name: 'Rohan Verma',
+      email: 'rohan.verma@example.com',
+      password: customerPassword,
+      phone: '+91 99887 76655',
+      avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=200&q=80',
+      status: 'BLOCKED',
+      addresses: [
+        {
+          fullName: 'Rohan Verma',
+          phone: '+91 99887 76655',
+          street: 'C-45, Defence Colony',
+          city: 'New Delhi',
+          state: 'Delhi',
+          postalCode: '110024',
+          country: 'India',
+          isDefault: true,
+          type: 'HOME',
+        },
+      ],
+      wishlist: [],
+      cart: [],
+      lastLoginAt: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
+    });
+
+    console.log('  👥 Seeded 3 Customers: Aanya Sharma, Priya Patel, Rohan Verma (Blocked)');
   }
 
   console.log('🎉 Seeding finished successfully!');

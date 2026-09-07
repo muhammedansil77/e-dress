@@ -17,6 +17,8 @@ import { productRoutes } from './modules/products/product.routes';
 import { brandRoutes } from './modules/brands/brand.routes';
 import { sizeRoutes } from './modules/sizes/size.routes';
 import { colorRoutes } from './modules/colors/color.routes';
+import { userRoutes } from './modules/users/user.routes';
+import { orderRoutes } from './modules/orders/order.routes';
 
 export const createApp = (): Application => {
   const app = express();
@@ -73,6 +75,8 @@ export const createApp = (): Application => {
   app.use('/api/v1/brands', brandRoutes);
   app.use('/api/v1/sizes', sizeRoutes);
   app.use('/api/v1/colors', colorRoutes);
+  app.use('/api/v1/users', userRoutes);
+  app.use('/api/v1/orders', orderRoutes);
 
   // 6. Handle 404 Routes
   app.use((req: Request, _res: Response, next: NextFunction) => {

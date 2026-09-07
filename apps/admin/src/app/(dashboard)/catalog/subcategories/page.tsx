@@ -230,10 +230,12 @@ export default function SubcategoriesPage() {
         onDelete={(cat) => setDeleteCandidate(cat)}
         onToggleStatus={handleToggleStatus}
         currentPage={page}
-        totalPages={meta.totalPages}
-        totalItems={meta.total}
+        totalPages={meta?.totalPages || 1}
+        totalItems={meta?.total || 0}
         pageSize={limit}
         onPageChange={(newPage) => setPage(newPage)}
+        onPageSizeChange={(newSize) => setLimit(newSize)}
+        onAddCategory={() => setIsModalOpen(true)}
       />
 
       {/* Modal */}
@@ -255,9 +257,9 @@ export default function SubcategoriesPage() {
         onClose={() => setDeleteCandidate(null)}
         onConfirm={() => deleteCandidate && deleteMutation.mutate(deleteCandidate._id)}
         title="Delete Subcategory?"
-        description={`Are you sure you want to delete "${deleteCandidate?.name}"? Products linked to this subcategory will need reassignment.`}
+        message={`Are you sure you want to delete "${deleteCandidate?.name}"? Products linked to this subcategory will need reassignment.`}
         confirmText="Yes, Delete"
-        variant="danger"
+        isDestructive={true}
         isLoading={deleteMutation.isPending}
       />
     </div>

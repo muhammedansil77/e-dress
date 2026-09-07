@@ -49,6 +49,20 @@ export interface ProductQueryFilters {
   status?: ProductStatus;
   isFeatured?: boolean;
   inStock?: boolean;
-  sortBy?: 'price' | 'createdAt' | 'name' | 'totalStock';
+  sizes?: string | string[];
+  colors?: string | string[];
+  minPrice?: number;
+  maxPrice?: number;
+  department?: string;
+  sortBy?: 'price' | 'createdAt' | 'name' | 'totalStock' | 'rating' | 'discount';
   sortOrder?: 'asc' | 'desc';
+}
+
+export interface ProductFilterFacets {
+  priceRange: { min: number; max: number };
+  sizes: Array<{ code: string; count: number }>;
+  colors: Array<{ name: string; hexCode: string; count: number }>;
+  brands: Array<{ _id: string; name: string; logo?: string; count: number }>;
+  categories: Array<{ _id: string; name: string; count: number }>;
+  totalProducts: number;
 }

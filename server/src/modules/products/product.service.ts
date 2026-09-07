@@ -12,6 +12,10 @@ export class ProductService {
     return productRepository.findPaginated(filters);
   }
 
+  public async getFilterFacets(): Promise<any> {
+    return productRepository.getFilterFacets();
+  }
+
   public async getProductById(id: string): Promise<IProductDocument> {
     const product = await productRepository.findById(id);
     if (!product) {

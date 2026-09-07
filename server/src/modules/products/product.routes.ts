@@ -9,6 +9,7 @@ import { createProductSchema, updateProductSchema, productQuerySchema } from './
 const router = Router();
 
 router.get('/', validateRequest(productQuerySchema, 'query'), productController.getProducts);
+router.get('/filters', productController.getFilterFacets);
 router.get('/:id', productController.getProductById);
 
 router.post(

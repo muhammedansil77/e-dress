@@ -8,14 +8,17 @@
     "apps/*"
   ],
   "scripts": {
-    "dev": "concurrently -n \"SERVER,ADMIN\" -c \"blue,magenta\" \"npm run dev:server\" \"npm run dev:admin\"",
+    "dev": "concurrently -n \"SERVER,ADMIN,WEB\" -c \"blue,magenta,cyan\" \"npm run dev:server\" \"npm run dev:admin\" \"npm run dev:web\"",
     "dev:server": "npm run dev --workspace=server",
     "dev:admin": "npm run dev --workspace=apps/admin",
+    "dev:web": "npm run dev --workspace=apps/web",
     "start:server": "npm run start --workspace=server",
     "start:admin": "npm run start --workspace=apps/admin",
+    "start:web": "npm run start --workspace=apps/web",
     "build": "npm run build --workspaces --if-present",
     "build:server": "npm run build --workspace=server",
     "build:admin": "npm run build --workspace=apps/admin",
+    "build:web": "npm run build --workspace=apps/web",
     "seed": "npm run seed --workspace=server",
     "lint": "npm run lint --workspaces --if-present"
   },

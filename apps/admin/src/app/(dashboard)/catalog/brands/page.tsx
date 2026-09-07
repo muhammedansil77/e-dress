@@ -504,9 +504,9 @@ export default function BrandsPage() {
         onClose={() => setDeleteCandidate(null)}
         onConfirm={() => deleteCandidate && deleteMutation.mutate(deleteCandidate._id)}
         title="Delete Brand?"
-        description={`Are you sure you want to delete "${deleteCandidate?.name}"? Products currently assigned to this brand will remain but become unbranded.`}
+        message={`Are you sure you want to delete "${deleteCandidate?.name}"? Products currently assigned to this brand will remain but become unbranded.`}
         confirmText="Yes, Delete"
-        variant="danger"
+        isDestructive={true}
         isLoading={deleteMutation.isPending}
       />
     </div>
