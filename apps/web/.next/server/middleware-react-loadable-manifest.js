@@ -1,0 +1,1 @@
+self.__REACT_LOADABLE_MANIFEST="{\"components\\\\fitting-room\\\\mannequin-canvas.tsx -> ./human-avatar-3d-scene\":{\"id\":\"components\\\\fitting-room\\\\mannequin-canvas.tsx -> ./human-avatar-3d-scene\",\"files\":[]}}"

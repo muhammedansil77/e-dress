@@ -87,6 +87,7 @@ export const PhotoContourScanner: React.FC<PhotoContourScannerProps> = ({ onScan
         let detectedWaist = 27;
         let detectedHips = 37;
         let detectedShoulder = 15.5;
+        let detectedLegInches = 21.0;
         let detectedHeight = 65;
 
         if (ctx) {
@@ -94,26 +95,80 @@ export const PhotoContourScanner: React.FC<PhotoContourScannerProps> = ({ onScan
           const imgData = ctx.getImageData(0, 0, W, H);
           const data = imgData.data;
 
-          // Helper to calculate subject width at any vertical ratio yRatio (0.0 to 1.0)
+          // 1. Adaptive Background Sampling from Outer Margins
+          // Margin columns reliably represent the wall/backdrop
+          let bgR_sum = 0, bgG_sum = 0, bgB_sum = 0, bgCount = 0;
+          for (let y = 10; y < H - 10; y += 5) {
+            for (const x of [2, 5, 8, W - 9, W - 6, W - 3]) {
+              const idx = (y * W + x) * 4;
+              bgR_sum += data[idx];
+              bgG_sum += data[idx + 1];
+              bgB_sum += data[idx + 2];
+              bgCount++;
+            }
+          }
+          const bgR = bgCount > 0 ? bgR_sum / bgCount : 240;
+          const bgG = bgCount > 0 ? bgG_sum / bgCount : 240;
+          const bgB = bgCount > 0 ? bgB_sum / bgCount : 240;
+          const bgLum = 0.299 * bgR + 0.587 * bgG + 0.114 * bgB;
+
+          // Helper to check if a pixel is foreground (differs from background or exhibits skin/clothing contrast)
+          const isForeground = (x: number, y: number): boolean => {
+            const idx = (y * W + x) * 4;
+            const r = data[idx];
+            const g = data[idx + 1];
+            const b = data[idx + 2];
+            const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+            const colorDist = Math.hypot(r - bgR, g - bgG, b - bgB);
+            const lumDiff = Math.abs(lum - bgLum);
+
+            // Skin chroma detection (distinguishes pale/warm skin from neutral walls)
+            const isSkin = r > 60 && g > 40 && b > 25 && (r - b) > 12 && (r - g) > 5;
+            // Contrast difference from backdrop
+            return isSkin || colorDist > 25 || lumDiff > 20;
+          };
+
+          // 2. High-Precision Center-Out Body Contour Scanner
+          // Starts from the subject center (W/2 = 80) and walks outward to detect body boundaries
+          const centerX = Math.floor(W / 2);
           const getWidthAtY = (yRatio: number): { width: number; left: number; right: number } => {
             const y = Math.floor(H * yRatio);
-            let left = W;
-            let right = 0;
 
-            for (let x = 0; x < W; x++) {
-              const idx = (y * W + x) * 4;
-              const r = data[idx];
-              const g = data[idx + 1];
-              const b = data[idx + 2];
-              const lum = 0.299 * r + 0.587 * g + 0.114 * b;
-
-              // Subject detection: ignore extreme white/black background
-              if (lum < 240 && lum > 15) {
-                if (x < left) left = x;
-                if (x > right) right = x;
+            // Scan leftwards from center
+            let left = centerX;
+            let consecutiveBgLeft = 0;
+            for (let x = centerX; x >= 0; x--) {
+              if (!isForeground(x, y)) {
+                consecutiveBgLeft++;
+                if (consecutiveBgLeft >= 3) {
+                  left = x + consecutiveBgLeft;
+                  break;
+                }
+              } else {
+                consecutiveBgLeft = 0;
               }
             }
-            const width = right > left ? right - left : 45;
+
+            // Scan rightwards from center
+            let right = centerX;
+            let consecutiveBgRight = 0;
+            for (let x = centerX; x < W; x++) {
+              if (!isForeground(x, y)) {
+                consecutiveBgRight++;
+                if (consecutiveBgRight >= 3) {
+                  right = x - consecutiveBgRight;
+                  break;
+                }
+              } else {
+                consecutiveBgRight = 0;
+              }
+            }
+
+            let width = right > left ? right - left : 28;
+            // Guard against extreme canvas bleed
+            if (width > W * 0.72) {
+              width = Math.round(W * 0.35);
+            }
             return { width, left, right };
           };
 
@@ -124,74 +179,103 @@ export const PhotoContourScanner: React.FC<PhotoContourScannerProps> = ({ onScan
           const lowWaistSample = getWidthAtY(0.49); // ~49% height = Lower abdomen
           const hipSample = getWidthAtY(0.58);      // ~58% height = Pelvis / Hips
 
-          // Filter out outer jacket flare by checking inner torso density gradient
-          const naturalWaistWidth = Math.min(midTorsoSample.width, lowWaistSample.width * 0.92);
+          // Filter out outerwear flare
+          const naturalWaistWidth = Math.min(midTorsoSample.width, lowWaistSample.width * 0.95);
           const shoulderWidthPx = shoulderSample.width;
           const hipWidthPx = hipSample.width;
 
           const shoulderToHipRatio = shoulderWidthPx / (hipWidthPx || 1);
           const waistToHipRatio = naturalWaistWidth / (hipWidthPx || 1);
 
-          // Intelligent Gender & Frame Detection:
-          // Men have broad shoulders relative to hips (V-taper) and straighter hip lines.
-          if (shoulderToHipRatio >= 1.12 || (shoulderWidthPx > 70 && waistToHipRatio > 0.80)) {
+          // 3. Intelligent Gender & Physique Frame Detection:
+          const isVeryLean = naturalWaistWidth <= 34 || chestSample.width <= 40;
+          const isLeanTailored = !isVeryLean && (naturalWaistWidth <= 42 || chestSample.width <= 48);
+
+          if (shoulderToHipRatio >= 1.08 || waistToHipRatio > 0.78 || shoulderWidthPx > 48) {
             detectedGender = 'MALE';
             detectedHeight = 70; // 5'10" base
 
-            if (shoulderToHipRatio >= 1.25) {
+            if (isVeryLean) {
+              // Lean / Skinny frame (e.g. 40-55kg)
+              detectedArchetype = 'SKINNY_SLENDER';
+              detectedBust = 33;
+              detectedWaist = 26;
+              detectedHips = 33;
+              detectedShoulder = 15.5;
+              detectedLegInches = 18.5;
+            } else if (isLeanTailored) {
+              // Slim / Lean Tailored
+              detectedArchetype = 'SLIM_RECTANGLE';
+              detectedBust = 36;
+              detectedWaist = 28;
+              detectedHips = 35;
+              detectedShoulder = 17.0;
+              detectedLegInches = 20.5;
+            } else if (shoulderToHipRatio >= 1.20 && shoulderWidthPx >= 52) {
+              // Athletic V-taper
               detectedArchetype = 'ATHLETIC_V_TAPER';
-              detectedBust = 42; // Chest
-              detectedWaist = 32;
-              detectedHips = 38;
-              detectedShoulder = 20;
-            } else if (chestSample.width > 75) {
+              detectedBust = 41;
+              detectedWaist = 31;
+              detectedHips = 37;
+              detectedShoulder = 19.5;
+              detectedLegInches = 23.0;
+            } else if (chestSample.width > 60 && naturalWaistWidth > 46) {
+              // Broad muscular
               detectedArchetype = 'BROAD_CHEST';
               detectedBust = 44;
               detectedWaist = 35;
               detectedHips = 40;
-              detectedShoulder = 21;
-            } else if (naturalWaistWidth <= 55) {
-              detectedArchetype = 'SLIM_RECTANGLE';
-              detectedBust = 38;
-              detectedWaist = 30;
-              detectedHips = 36;
-              detectedShoulder = 18;
+              detectedShoulder = 20.5;
+              detectedLegInches = 25.5;
             } else {
+              // Relaxed fit
               detectedArchetype = 'RELAXED_FIT';
               detectedBust = 42;
               detectedWaist = 36;
               detectedHips = 41;
-              detectedShoulder = 19;
+              detectedShoulder = 18.5;
+              detectedLegInches = 23.5;
             }
           } else {
             // Female Couture Silhouettes
             detectedGender = 'FEMALE';
             detectedHeight = 65; // 5'5" base
 
-            if (waistToHipRatio < 0.74) {
+            if (isVeryLean) {
+              detectedArchetype = 'PETITE';
+              detectedBust = 32;
+              detectedWaist = 25;
+              detectedHips = 34;
+              detectedShoulder = 14.0;
+              detectedLegInches = 19.0;
+            } else if (waistToHipRatio < 0.74) {
               detectedArchetype = 'HOURGLASS';
               detectedBust = 36;
               detectedWaist = 26;
               detectedHips = 37;
               detectedShoulder = 15.5;
+              detectedLegInches = 21.5;
             } else if (hipWidthPx > chestSample.width * 1.15) {
               detectedArchetype = 'PEAR';
               detectedBust = 34;
               detectedWaist = 28;
               detectedHips = 40;
               detectedShoulder = 14.5;
+              detectedLegInches = 23.5;
             } else if (naturalWaistWidth > chestSample.width * 0.92) {
               detectedArchetype = 'APPLE';
               detectedBust = 38;
               detectedWaist = 33;
               detectedHips = 38;
               detectedShoulder = 15.5;
+              detectedLegInches = 20.5;
             } else {
               detectedArchetype = 'RECTANGLE';
               detectedBust = 35;
               detectedWaist = 29;
               detectedHips = 36;
-              detectedShoulder = 16;
+              detectedShoulder = 16.0;
+              detectedLegInches = 20.5;
             }
           }
         }
@@ -208,10 +292,15 @@ export const PhotoContourScanner: React.FC<PhotoContourScannerProps> = ({ onScan
           estimatedWaist: detectedWaist,
           estimatedHips: detectedHips,
           estimatedShoulders: detectedShoulder,
+          estimatedLegInches: detectedLegInches,
           estimatedHeight: detectedHeight,
         };
 
         setDetectedMetrics(metrics);
+        const scannedPreset = detectedGender === 'MALE'
+          ? (MALE_ARCHETYPE_PRESETS as any)[metrics.detectedArchetype]
+          : (FEMALE_ARCHETYPE_PRESETS as any)[metrics.detectedArchetype];
+
         onScanComplete({
           gender: metrics.gender,
           archetype: metrics.detectedArchetype,
@@ -219,6 +308,9 @@ export const PhotoContourScanner: React.FC<PhotoContourScannerProps> = ({ onScan
           waistInches: metrics.estimatedWaist,
           hipInches: metrics.estimatedHips,
           shoulderInches: metrics.estimatedShoulders,
+          legInches: metrics.estimatedLegInches,
+          armAngle: scannedPreset?.armAngle ?? (metrics.detectedArchetype === 'SKINNY_SLENDER' ? 10 : 25),
+          armThickness: scannedPreset?.armThickness ?? (metrics.detectedArchetype === 'SKINNY_SLENDER' ? 76 : 100),
           heightInches: metrics.estimatedHeight,
           photoScanned: true,
         });
@@ -226,29 +318,68 @@ export const PhotoContourScanner: React.FC<PhotoContourScannerProps> = ({ onScan
     };
   };
 
+  const handleArchetypeSelect = (archetype: SilhouetteArchetype) => {
+    if (!detectedMetrics) return;
+
+    const isMale = detectedMetrics.gender === 'MALE';
+    const preset = isMale
+      ? (MALE_ARCHETYPE_PRESETS as any)[archetype]
+      : (FEMALE_ARCHETYPE_PRESETS as any)[archetype];
+
+    if (!preset) return;
+
+    const updated = {
+      ...detectedMetrics,
+      detectedArchetype: archetype,
+      estimatedBust: preset.bust,
+      estimatedWaist: preset.waist,
+      estimatedHips: preset.hips,
+      estimatedShoulders: preset.shoulder || (isMale ? 18 : 15.5),
+      estimatedLegInches: preset.legInches || 21.0,
+    };
+    setDetectedMetrics(updated);
+    onScanComplete({
+      gender: updated.gender,
+      archetype: updated.detectedArchetype,
+      bustInches: updated.estimatedBust,
+      waistInches: updated.estimatedWaist,
+      hipInches: updated.estimatedHips,
+      shoulderInches: updated.estimatedShoulders,
+      legInches: updated.estimatedLegInches,
+      armAngle: preset.armAngle ?? 25,
+      armThickness: preset.armThickness ?? 100,
+      heightInches: updated.estimatedHeight,
+      photoScanned: true,
+    });
+  };
+
   const handleGenderToggle = (newGender: GenderCategory) => {
     if (!detectedMetrics) return;
 
     if (newGender === 'MALE') {
-      const preset = MALE_ARCHETYPE_PRESETS.ATHLETIC_V_TAPER;
+      const preset = MALE_ARCHETYPE_PRESETS.SKINNY_SLENDER;
       const updated = {
         ...detectedMetrics,
         gender: 'MALE' as GenderCategory,
-        detectedArchetype: 'ATHLETIC_V_TAPER' as SilhouetteArchetype,
+        detectedArchetype: 'SKINNY_SLENDER' as SilhouetteArchetype,
         estimatedBust: preset.bust,
         estimatedWaist: preset.waist,
         estimatedHips: preset.hips,
-        estimatedShoulders: preset.shoulder || 19.5,
+        estimatedShoulders: preset.shoulder || 15.5,
+        estimatedLegInches: preset.legInches || 18.5,
         estimatedHeight: 70,
       };
       setDetectedMetrics(updated);
       onScanComplete({
         gender: 'MALE',
-        archetype: 'ATHLETIC_V_TAPER',
+        archetype: 'SKINNY_SLENDER',
         bustInches: preset.bust,
         waistInches: preset.waist,
         hipInches: preset.hips,
         shoulderInches: preset.shoulder,
+        legInches: preset.legInches,
+        armAngle: preset.armAngle ?? 10,
+        armThickness: preset.armThickness ?? 76,
         heightInches: 70,
         photoScanned: true,
       });
@@ -262,6 +393,7 @@ export const PhotoContourScanner: React.FC<PhotoContourScannerProps> = ({ onScan
         estimatedWaist: preset.waist,
         estimatedHips: preset.hips,
         estimatedShoulders: preset.shoulder || 15.5,
+        estimatedLegInches: preset.legInches || 21.5,
         estimatedHeight: 65,
       };
       setDetectedMetrics(updated);
@@ -272,6 +404,9 @@ export const PhotoContourScanner: React.FC<PhotoContourScannerProps> = ({ onScan
         waistInches: preset.waist,
         hipInches: preset.hips,
         shoulderInches: preset.shoulder,
+        legInches: preset.legInches,
+        armAngle: preset.armAngle ?? 25,
+        armThickness: preset.armThickness ?? 95,
         heightInches: 65,
         photoScanned: true,
       });
@@ -359,7 +494,7 @@ export const PhotoContourScanner: React.FC<PhotoContourScannerProps> = ({ onScan
                   <CheckCircle2 className="w-5 h-5 text-[#059669]" />
                   <div>
                     <h5 className="font-serif text-sm font-bold text-[#2F241D]">
-                      Identified: {detectedMetrics.gender === 'MALE' ? 'Tailored Men\'s' : 'Couture Women\'s'} {detectedMetrics.detectedArchetype.replace('_', ' ')}
+                      Identified: {detectedMetrics.gender === 'MALE' ? 'Tailored Men\'s' : 'Couture Women\'s'} {detectedMetrics.detectedArchetype.replaceAll('_', ' ')}
                     </h5>
                     <p className="text-[11px] text-[#806F61]">
                       Estimated: {detectedMetrics.gender === 'MALE' ? 'Chest' : 'Bust'} {detectedMetrics.estimatedBust}" • Waist {detectedMetrics.estimatedWaist}" • Hips {detectedMetrics.estimatedHips}" • Shoulders {detectedMetrics.estimatedShoulders}"
@@ -403,6 +538,50 @@ export const PhotoContourScanner: React.FC<PhotoContourScannerProps> = ({ onScan
                   >
                     ♂ Men's / Tailored
                   </button>
+                </div>
+              </div>
+
+              {/* Archetype Quick Selector Pills */}
+              <div className="pt-2 border-t border-[#DED2C2]/60 space-y-1.5">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-[#806F61] font-medium">Physique Silhouette Archetype:</span>
+                  <span className="text-[11px] font-semibold text-[#5A3E2B]">
+                    {detectedMetrics.detectedArchetype.replace('_', ' ')}
+                  </span>
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {(detectedMetrics.gender === 'MALE'
+                    ? [
+                        { id: 'SKINNY_SLENDER', label: 'Lean Frame (XS/S)' },
+                        { id: 'SLIM_RECTANGLE', label: 'Slim Tailored (S/M)' },
+                        { id: 'ATHLETIC_V_TAPER', label: 'Athletic V-Taper (M/L)' },
+                        { id: 'BROAD_CHEST', label: 'Muscular (L/XL)' },
+                        { id: 'RELAXED_FIT', label: 'Relaxed Classic' },
+                      ]
+                    : [
+                        { id: 'PETITE', label: 'Petite (XS)' },
+                        { id: 'HOURGLASS', label: 'Hourglass (S/M)' },
+                        { id: 'PEAR', label: 'Pear / Triangle' },
+                        { id: 'RECTANGLE', label: 'Athletic / Ruler' },
+                        { id: 'APPLE', label: 'Apple / Round' },
+                      ]
+                  ).map((arch) => {
+                    const isSelected = detectedMetrics.detectedArchetype === arch.id;
+                    return (
+                      <button
+                        key={arch.id}
+                        type="button"
+                        onClick={() => handleArchetypeSelect(arch.id as SilhouetteArchetype)}
+                        className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all border ${
+                          isSelected
+                            ? 'bg-[#5A3E2B] text-[#FFFDF8] border-[#5A3E2B] shadow-xs scale-105'
+                            : 'bg-[#F7F1E7] text-[#806F61] border-[#DED2C2] hover:text-[#2F241D] hover:border-[#5A3E2B]'
+                        }`}
+                      >
+                        {arch.label}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
             </div>

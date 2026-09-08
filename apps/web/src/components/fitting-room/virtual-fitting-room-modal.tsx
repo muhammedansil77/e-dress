@@ -6,6 +6,8 @@ import {
   CustomerBodyProfile,
   SilhouetteArchetype,
   GenderCategory,
+  AvatarPose,
+  AVATAR_POSES,
   ARCHETYPE_PRESETS,
   FEMALE_ARCHETYPE_PRESETS,
   MALE_ARCHETYPE_PRESETS,
@@ -101,7 +103,7 @@ export const VirtualFittingRoomModal: React.FC<VirtualFittingRoomModalProps> = (
     }
   };
 
-  const handleSliderChange = (key: keyof CustomerBodyProfile, value: number) => {
+  const handleSliderChange = <K extends keyof CustomerBodyProfile>(key: K, value: CustomerBodyProfile[K]) => {
     const updated = { ...profile, [key]: value };
     setProfile(updated);
     bodyProfileService.saveProfile(updated);
@@ -116,6 +118,9 @@ export const VirtualFittingRoomModal: React.FC<VirtualFittingRoomModalProps> = (
       waistInches: preset.waist,
       hipInches: preset.hips,
       shoulderInches: preset.shoulder || (profile.gender === 'MALE' ? 19.5 : 15.5),
+      legInches: preset.legInches || (profile.gender === 'MALE' ? 22.0 : 21.0),
+      armAngle: preset.armAngle ?? 25,
+      armThickness: preset.armThickness ?? 100,
     };
     setProfile(updated);
     bodyProfileService.saveProfile(updated);
@@ -253,6 +258,13 @@ export const VirtualFittingRoomModal: React.FC<VirtualFittingRoomModalProps> = (
                 dressName={dressTitle}
                 dressColorHex={currentColorHex}
                 dressLengthInches={48}
+                onUpdateProfile={(updated) => {
+                  const newProfile = { ...profile, ...updated };
+                  setProfile(newProfile);
+                  bodyProfileService.saveProfile(newProfile);
+                  const newAnalysis = bodyProfileService.analyzeFit(newProfile, testedSize, 48);
+                  setTestedSize(newAnalysis.recommendedSize);
+                }}
               />
 
               {/* Size Selector Strip */}
@@ -459,6 +471,110 @@ export const VirtualFittingRoomModal: React.FC<VirtualFittingRoomModalProps> = (
                         onChange={(e) => handleSliderChange('shoulderInches', Number(e.target.value))}
                         className="w-full accent-[#5A3E2B] cursor-pointer"
                       />
+                    </div>
+
+                    {/* Legs & Thighs Slider */}
+                    <div className="space-y-1">
+                      <div className="flex justify-between text-xs font-medium">
+                        <span className="text-[#2F241D]">Legs & Thighs (Slimming vs Bulking)</span>
+                        <span className="font-serif font-bold text-[#5A3E2B]">{profile.legInches || (profile.gender === 'MALE' ? 22 : 21)}"</span>
+                      </div>
+                      <input
+                        type="range"
+                        min="16"
+                        max="28"
+                        step="0.5"
+                        value={profile.legInches || (profile.gender === 'MALE' ? 22 : 21)}
+                        onChange={(e) => handleSliderChange('legInches', Number(e.target.value))}
+                        className="w-full accent-[#5A3E2B] cursor-pointer"
+                      />
+                    </div>
+
+                    {/* Hand & Arm Stance Slider */}
+                    <div className="space-y-1">
+                      <div className="flex justify-between text-xs font-medium">
+                        <span className="text-[#2F241D]">Hand & Arm Stance (Proximity to Body)</span>
+                        <span className="font-serif font-bold text-[#5A3E2B]">
+                          {(profile.armAngle ?? (profile.archetype === 'SKINNY_SLENDER' ? 10 : 25)) <= 15
+                            ? 'Resting at Sides'
+                            : (profile.armAngle ?? 25) <= 45
+                            ? 'Relaxed Stance'
+                            : 'Open A-Pose'}{' '}
+                          ({profile.armAngle ?? (profile.archetype === 'SKINNY_SLENDER' ? 10 : 25)}%)
+                        </span>
+                      </div>
+                      <input
+                        type="range"
+                        min="0"
+                        max="100"
+                        step="1"
+                        value={profile.armAngle !== undefined ? profile.armAngle : (profile.archetype === 'SKINNY_SLENDER' ? 10 : 25)}
+                        onChange={(e) => handleSliderChange('armAngle', Number(e.target.value))}
+                        className="w-full accent-[#5A3E2B] cursor-pointer"
+                      />
+                    </div>
+
+                    {/* Hand & Wrist Build Slider */}
+                    <div className="space-y-1">
+                      <div className="flex justify-between text-xs font-medium">
+                        <span className="text-[#2F241D]">Hand & Wrist Build (Slim vs Muscular)</span>
+                        <span className="font-serif font-bold text-[#5A3E2B]">
+                          {(profile.armThickness ?? (profile.archetype === 'SKINNY_SLENDER' ? 76 : 100)) <= 80
+                            ? 'Slender / Skinny Hands'
+                            : (profile.armThickness ?? 100) <= 105
+                            ? 'Natural Balanced'
+                            : 'Muscular Hands'}{' '}
+                          ({profile.armThickness ?? (profile.archetype === 'SKINNY_SLENDER' ? 76 : 100)}%)
+                        </span>
+                      </div>
+                      <input
+                        type="range"
+                        min="70"
+                        max="130"
+                        step="1"
+                        value={profile.armThickness !== undefined ? profile.armThickness : (profile.archetype === 'SKINNY_SLENDER' ? 76 : 100)}
+                        onChange={(e) => handleSliderChange('armThickness', Number(e.target.value))}
+                        className="w-full accent-[#5A3E2B] cursor-pointer"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Avatar Pose Options */}
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-semibold uppercase tracking-wider text-[#806F61]">
+                        3D Avatar Pose & Stance:
+                      </span>
+                      <span className="text-xs font-bold text-[#5A3E2B]">
+                        {AVATAR_POSES.find((p) => p.id === (profile.pose || 'NATURAL_SIDES'))?.label}
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                      {AVATAR_POSES.map((poseItem) => {
+                        const isSelected = (profile.pose || 'NATURAL_SIDES') === poseItem.id;
+                        return (
+                          <button
+                            key={poseItem.id}
+                            type="button"
+                            onClick={() => handleSliderChange('pose', poseItem.id)}
+                            className={`p-2.5 rounded-xl text-left border transition-all cursor-pointer ${
+                              isSelected
+                                ? 'bg-[#E8D5B5]/60 border-[#5A3E2B] shadow-xs ring-1 ring-[#5A3E2B]/20'
+                                : 'bg-[#F7F1E7]/40 border-[#DED2C2] hover:border-[#5A3E2B]'
+                            }`}
+                          >
+                            <div className="flex items-center gap-1.5 mb-1">
+                              <span className="text-base">{poseItem.icon}</span>
+                              <span className="font-bold text-xs text-[#2F241D]">
+                                {poseItem.label}
+                              </span>
+                            </div>
+                            <span className="text-[10px] text-[#806F61] line-clamp-1">
+                              {poseItem.description}
+                            </span>
+                          </button>
+                        );
+                      })}
                     </div>
                   </div>
                 </div>

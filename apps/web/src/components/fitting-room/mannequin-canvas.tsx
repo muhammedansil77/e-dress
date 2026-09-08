@@ -1,8 +1,24 @@
 'use client';
 
-import React from 'react';
-import { CustomerBodyProfile, BodyFitAnalysis } from '../../services/body-profile.service';
-import { Sparkles, Ruler, Shield } from 'lucide-react';
+import React, { useState } from 'react';
+import dynamic from 'next/dynamic';
+import { CustomerBodyProfile, BodyFitAnalysis, AVATAR_POSES, AvatarPose } from '../../services/body-profile.service';
+import { Sparkles, Ruler, Shield, Layers, User, Palette, Sliders } from 'lucide-react';
+import { SKIN_TONES, SkinTone } from './human-avatar-3d-scene';
+
+// Dynamic import with SSR disabled to ensure Three.js only runs in browser
+const HumanAvatar3DScene = dynamic(
+  () => import('./human-avatar-3d-scene').then((mod) => mod.HumanAvatar3DScene),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="w-full h-[380px] sm:h-[440px] flex flex-col items-center justify-center gap-2 bg-[#F7F1E7]/50 rounded-2xl">
+        <div className="w-8 h-8 rounded-full border-2 border-[#5A3E2B] border-t-transparent animate-spin" />
+        <span className="text-xs text-[#806F61] font-medium">Initializing 3D Anatomical Studio...</span>
+      </div>
+    ),
+  }
+);
 
 interface MannequinCanvasProps {
   profile: CustomerBodyProfile;
@@ -11,6 +27,7 @@ interface MannequinCanvasProps {
   dressName: string;
   dressColorHex?: string;
   dressLengthInches?: number;
+  onUpdateProfile?: (profile: Partial<CustomerBodyProfile>) => void;
 }
 
 export const MannequinCanvas: React.FC<MannequinCanvasProps> = ({
@@ -20,47 +37,12 @@ export const MannequinCanvas: React.FC<MannequinCanvasProps> = ({
   dressName,
   dressColorHex = '#5A3E2B',
   dressLengthInches = 48,
+  onUpdateProfile,
 }) => {
   const isMale = profile.gender === 'MALE';
-
-  // Base normalization
-  const baseHeight = isMale ? 70 : 65; // 5'10" for male, 5'5" for female
-  const heightRatio = profile.heightInches / baseHeight;
-
-  // Anatomical proportions based on gender
-  const shoulderWidth = isMale
-    ? 60 + ((profile.shoulderInches || 19) - 19) * 2.5
-    : 44 + (profile.bustInches - 36) * 0.6;
-
-  const chestWidth = isMale
-    ? 52 + (profile.bustInches - 40) * 1.5
-    : 46 + (profile.bustInches - 36) * 1.6;
-
-  const waistWidth = isMale
-    ? 38 + (profile.waistInches - 32) * 1.4
-    : 29 + (profile.waistInches - 27) * 1.6;
-
-  const hipWidth = isMale
-    ? 44 + (profile.hipInches - 38) * 1.2
-    : 52 + (profile.hipInches - 37) * 1.7;
-
-  // Vertical landmark heights
-  const headTopY = 32;
-  const chinY = 94;
-  const neckY = 112;
-  const shoulderY = 126;
-  const chestY = isMale ? 175 : 168;
-  const waistY = 228;
-  const hipY = 286;
-  const crotchY = 330;
-  const kneeY = 440 * heightRatio;
-  const ankleY = 540 * heightRatio;
-
-  // Garment hemline drop
-  const shoulderToFloor = profile.heightInches * 0.82;
-  const garmentLengthActual = dressLengthInches;
-  const garmentScale = 7.1 * (baseHeight / profile.heightInches);
-  const garmentDrop = Math.min(ankleY + 18, shoulderY + garmentLengthActual * garmentScale);
+  const [selectedSkinTone, setSelectedSkinTone] = useState<SkinTone>(SKIN_TONES[1]); // Warm Ivory default
+  const [viewMode, setViewMode] = useState<'body' | 'dress' | 'heatmap'>('body');
+  const [isFineTuningOpen, setIsFineTuningOpen] = useState(false);
 
   // Status zones
   const upperZone = fitAnalysis.zones.find((z) => z.zone === (isMale ? 'Chest' : 'Bust'));
@@ -74,13 +56,13 @@ export const MannequinCanvas: React.FC<MannequinCanvasProps> = ({
   };
 
   return (
-    <div className="relative bg-gradient-to-b from-[#FFFDF8] via-[#FDFBF7] to-[#F7F1E7] rounded-3xl border border-[#DED2C2] p-4 flex flex-col items-center justify-between shadow-xs overflow-hidden select-none">
+    <div className="relative bg-gradient-to-b from-[#FFFDF8] via-[#FDFBF7] to-[#F7F1E7] rounded-3xl border border-[#DED2C2] p-4 flex flex-col items-center justify-between shadow-xs select-none">
       {/* 1. Top Badges: Silhouette & Fit Score */}
-      <div className="w-full flex items-center justify-between z-10 text-xs gap-2">
+      <div className="w-full flex items-center justify-between z-10 text-xs gap-2 mb-2">
         <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#EFE5D5] text-[#5A3E2B] font-semibold text-[11px] shadow-2xs">
           <Ruler className="w-3.5 h-3.5 text-[#B58B45]" />
           <span>
-            {Math.floor(profile.heightInches / 12)}'{profile.heightInches % 12}" • {isMale ? 'Tailored' : 'Couture'} {profile.archetype.replace('_', ' ')}
+            {Math.floor(profile.heightInches / 12)}'{profile.heightInches % 12}" • {isMale ? 'Tailored' : 'Couture'} {profile.archetype.replaceAll('_', ' ')}
           </span>
         </div>
 
@@ -90,335 +72,399 @@ export const MannequinCanvas: React.FC<MannequinCanvasProps> = ({
         </div>
       </div>
 
-      {/* 2. Studio 3D Mannequin Canvas */}
-      <div className="w-full max-w-[300px] aspect-[1/2] relative my-1">
-        <svg
-          viewBox="0 0 320 600"
-          className="w-full h-full filter drop-shadow-md transition-all duration-300"
-        >
-          <defs>
-            {/* Studio Ceramic Mannequin Gradient (Shaded 3D Volume) */}
-            <linearGradient id="studioMannequin" x1="20%" y1="0%" x2="100%" y2="100%">
-              <stop offset="0%" stopColor="#FAF4E8" />
-              <stop offset="35%" stopColor="#EFE5D5" />
-              <stop offset="70%" stopColor="#DED2C2" />
-              <stop offset="100%" stopColor="#BFAF9B" />
-            </linearGradient>
-
-            {/* Deltoid / Arm Shading Gradient */}
-            <linearGradient id="armShading" x1="0%" y1="0%" x2="100%" y2="0%">
-              <stop offset="0%" stopColor="#DED2C2" />
-              <stop offset="50%" stopColor="#EFE5D5" />
-              <stop offset="100%" stopColor="#C8BAA6" />
-            </linearGradient>
-
-            {/* Garment Luxury Fabric Luster Gradient */}
-            <linearGradient id="garmentFabric" x1="0%" y1="0%" x2="100%" y2="0%">
-              <stop offset="0%" stopColor={dressColorHex} stopOpacity="0.82" />
-              <stop offset="35%" stopColor={dressColorHex} stopOpacity="1" />
-              <stop offset="65%" stopColor="#FFFFFF" stopOpacity="0.22" />
-              <stop offset="70%" stopColor={dressColorHex} stopOpacity="0.95" />
-              <stop offset="100%" stopColor={dressColorHex} stopOpacity="0.80" />
-            </linearGradient>
-
-            {/* Brushed Brass / Gold Pedestal Stand */}
-            <linearGradient id="pedestalGold" x1="0%" y1="0%" x2="100%" y2="0%">
-              <stop offset="0%" stopColor="#8A6424" />
-              <stop offset="30%" stopColor="#D4AF37" />
-              <stop offset="50%" stopColor="#F9E8B2" />
-              <stop offset="70%" stopColor="#B58B45" />
-              <stop offset="100%" stopColor="#5A3E2B" />
-            </linearGradient>
-
-            {/* Soft Ambient Shadow */}
-            <radialGradient id="pedestalShadow" cx="50%" cy="50%" r="50%">
-              <stop offset="0%" stopColor="#2F241D" stopOpacity="0.25" />
-              <stop offset="100%" stopColor="#2F241D" stopOpacity="0" />
-            </radialGradient>
-          </defs>
-
-          {/* --- Floor Pedestal Stand (Studio Furniture) --- */}
-          <g id="atelierPedestal">
-            {/* Cast Floor Drop Shadow */}
-            <ellipse cx="160" cy="582" rx="76" ry="10" fill="url(#pedestalShadow)" />
-
-            {/* Brushed Brass Circular Base */}
-            <ellipse cx="160" cy="578" rx="64" ry="7" fill="url(#pedestalGold)" />
-            <ellipse cx="160" cy="576" rx="58" ry="5.5" fill="#E8D5B5" opacity="0.6" />
-
-            {/* Vertical Studio Support Rod */}
-            <rect x="157.5" y="320" width="5" height="258" fill="url(#pedestalGold)" />
-          </g>
-
-          {/* --- 3D Anatomical Mannequin Body --- */}
-          <g id="sculptedAnatomy">
-            {/* Sculpted Head */}
-            <path
-              d={`
-                M 160 ${headTopY}
-                C 178 ${headTopY} 186 ${headTopY + 16} 184 ${headTopY + 38}
-                C 182 ${headTopY + 54} 172 ${chinY - 2} 160 ${chinY}
-                C 148 ${chinY - 2} 138 ${headTopY + 54} 136 ${headTopY + 38}
-                C 134 ${headTopY + 16} 142 ${headTopY} 160 ${headTopY}
-                Z
-              `}
-              fill="url(#studioMannequin)"
-              stroke="#DED2C2"
-              strokeWidth="1"
-            />
-
-            {/* Sculpted Neck & Sternocleidomastoid Curves */}
-            <path
-              d={`
-                M ${isMale ? 149 : 152} ${chinY - 4}
-                L ${isMale ? 147 : 151} ${neckY}
-                L ${isMale ? 173 : 169} ${neckY}
-                L ${isMale ? 171 : 168} ${chinY - 4}
-                Z
-              `}
-              fill="url(#studioMannequin)"
-            />
-
-            {/* Clavicle / Collarbone Accent Lines */}
-            <path
-              d={`
-                M ${160 - shoulderWidth + 14} ${shoulderY}
-                Q 160 ${shoulderY + 6} ${160 + shoulderWidth - 14} ${shoulderY}
-              `}
-              stroke="#BFAF9B"
-              strokeWidth="1.5"
-              fill="none"
-              opacity="0.85"
-            />
-
-            {/* Left Arm & Deltoid Cap */}
-            <path
-              d={`
-                M ${160 - shoulderWidth} ${shoulderY}
-                C ${160 - shoulderWidth - 16} ${shoulderY + 10} ${160 - shoulderWidth - 22} ${chestY} ${160 - shoulderWidth - 18} 240
-                Q ${160 - shoulderWidth - 14} 300 ${160 - shoulderWidth - 8} 345
-              `}
-              stroke="url(#armShading)"
-              strokeWidth={isMale ? '16' : '12'}
-              strokeLinecap="round"
-              fill="none"
-            />
-
-            {/* Right Arm & Deltoid Cap */}
-            <path
-              d={`
-                M ${160 + shoulderWidth} ${shoulderY}
-                C ${160 + shoulderWidth + 16} ${shoulderY + 10} ${160 + shoulderWidth + 22} ${chestY} ${160 + shoulderWidth + 18} 240
-                Q ${160 + shoulderWidth + 14} 300 ${160 + shoulderWidth + 8} 345
-              `}
-              stroke="url(#armShading)"
-              strokeWidth={isMale ? '16' : '12'}
-              strokeLinecap="round"
-              fill="none"
-            />
-
-            {/* Main Torso & Pelvis Contour (3D Sculpted) */}
-            <path
-              d={`
-                M ${160 - shoulderWidth} ${shoulderY}
-                C ${160 - chestWidth} ${chestY - 14}, ${160 - chestWidth} ${chestY + 12}, ${160 - waistWidth} ${waistY}
-                C ${160 - waistWidth} ${waistY + 18}, ${160 - hipWidth} ${hipY - 8}, ${160 - hipWidth} ${hipY + 18}
-                C ${160 - hipWidth} ${hipY + 30}, 144 ${crotchY - 8}, 144 ${crotchY}
-                L 176 ${crotchY}
-                C 176 ${crotchY - 8}, ${160 + hipWidth} ${hipY + 30}, ${160 + hipWidth} ${hipY + 18}
-                C ${160 + hipWidth} ${hipY - 8}, ${160 + waistWidth} ${waistY + 18}, ${160 + waistWidth} ${waistY}
-                C ${160 + chestWidth} ${chestY + 12}, ${160 + chestWidth} ${chestY - 14}, ${160 + shoulderWidth} ${shoulderY}
-                Z
-              `}
-              fill="url(#studioMannequin)"
-              stroke="#DED2C2"
-              strokeWidth="1.2"
-            />
-
-            {/* Left Leg (Thigh, Knee, Calf, Ankle) */}
-            <path
-              d={`
-                M 144 ${crotchY}
-                Q 141 ${kneeY} 142 ${ankleY}
-                L 138 ${ankleY + 14}
-              `}
-              stroke="url(#studioMannequin)"
-              strokeWidth={isMale ? '24' : '18'}
-              strokeLinecap="round"
-              fill="none"
-            />
-
-            {/* Right Leg */}
-            <path
-              d={`
-                M 176 ${crotchY}
-                Q 179 ${kneeY} 178 ${ankleY}
-                L 182 ${ankleY + 14}
-              `}
-              stroke="url(#studioMannequin)"
-              strokeWidth={isMale ? '24' : '18'}
-              strokeLinecap="round"
-              fill="none"
-            />
-          </g>
-
-          {/* --- Dimensional Fabric Drape Overlay --- */}
-          <g id="garmentDrapeLayer">
-            {isMale ? (
-              /* Male Tailored Silhouette (Structured Blazer / Kurta Drape) */
-              <g id="tailoredMenJacket">
-                <path
-                  d={`
-                    M ${160 - shoulderWidth + 2} ${shoulderY + 2}
-                    C ${160 - chestWidth - 3} ${chestY}, ${160 - waistWidth - 4} ${waistY}, ${160 - hipWidth - 4} ${hipY}
-                    L ${160 - hipWidth - 8} ${garmentDrop}
-                    Q 160 ${garmentDrop + 4} ${160 + hipWidth + 8} ${garmentDrop}
-                    L ${160 + hipWidth + 4} ${hipY}
-                    C ${160 + waistWidth + 4} ${waistY}, ${160 + chestWidth + 3} ${chestY}, ${160 + shoulderWidth - 2} ${shoulderY + 2}
-                    L 170 ${shoulderY + 16}
-                    L 160 ${waistY - 10}
-                    L 150 ${shoulderY + 16}
-                    Z
-                  `}
-                  fill="url(#garmentFabric)"
-                  stroke="#B58B45"
-                  strokeWidth="1.8"
-                />
-
-                {/* Tailored Lapel Creases */}
-                <path
-                  d={`
-                    M 150 ${shoulderY + 16} L 160 ${waistY - 10}
-                    M 170 ${shoulderY + 16} L 160 ${waistY - 10}
-                    M 160 ${waistY - 10} L 160 ${garmentDrop}
-                  `}
-                  stroke="#E8D5B5"
-                  strokeWidth="1.5"
-                  strokeDasharray="3 3"
-                  opacity="0.8"
-                  fill="none"
-                />
-              </g>
-            ) : (
-              /* Female Couture Dress Drape with Gathered Waist & Wave Hem */
-              <g id="coutureFemaleDress">
-                <path
-                  d={`
-                    M ${160 - shoulderWidth + 10} ${shoulderY + 8}
-                    C ${160 - chestWidth - 2} ${chestY}, ${160 - waistWidth - 2} ${waistY}, ${160 - hipWidth - 3} ${hipY}
-                    Q ${160 - hipWidth - 18} ${(hipY + garmentDrop) / 2} ${160 - hipWidth - 24} ${garmentDrop}
-                    C ${160 - hipWidth / 2} ${garmentDrop + 6}, ${160 + hipWidth / 2} ${garmentDrop - 4}, ${160 + hipWidth + 24} ${garmentDrop}
-                    Q ${160 + hipWidth + 18} ${(hipY + garmentDrop) / 2} ${160 + hipWidth + 3} ${hipY}
-                    C ${160 + waistWidth + 2} ${waistY}, ${160 + chestWidth + 2} ${chestY}, ${160 + shoulderWidth - 10} ${shoulderY + 8}
-                    L 160 ${shoulderY + 32}
-                    Z
-                  `}
-                  fill="url(#garmentFabric)"
-                  stroke="#B58B45"
-                  strokeWidth="1.6"
-                />
-
-                {/* Natural Fabric Drape Fold Shadows (Silk/Georgette Gathering) */}
-                <path
-                  d={`
-                    M ${160 - waistWidth - 2} ${waistY}
-                    Q 160 ${waistY + 6} ${160 + waistWidth + 2} ${waistY}
-                  `}
-                  stroke="#E8D5B5"
-                  strokeWidth="2.2"
-                  fill="none"
-                />
-
-                {/* Vertical Fabric Flow Lines */}
-                <path
-                  d={`
-                    M 152 ${waistY + 4} Q 148 ${(waistY + garmentDrop) / 2} 142 ${garmentDrop - 2}
-                    M 168 ${waistY + 4} Q 172 ${(waistY + garmentDrop) / 2} 178 ${garmentDrop - 2}
-                  `}
-                  stroke="#FFFFFF"
-                  strokeWidth="1"
-                  opacity="0.3"
-                  fill="none"
-                />
-              </g>
-            )}
-          </g>
-
-          {/* --- Precision Fit Tension Zones (Left Column) --- */}
-          {/* 1. Upper Body (Bust / Chest) Marker */}
-          <g id="upperZoneMarker">
-            <circle cx={160 - chestWidth - 10} cy={chestY} r="5.5" fill={getStatusColor(upperZone?.status)} />
-            <circle cx={160 - chestWidth - 10} cy={chestY} r="8" fill="none" stroke={getStatusColor(upperZone?.status)} strokeWidth="1" opacity="0.6" />
-            <line
-              x1={160 - chestWidth - 15}
-              y1={chestY}
-              x2="52"
-              y2={chestY}
-              stroke={getStatusColor(upperZone?.status)}
-              strokeWidth="1.2"
-              strokeDasharray="2 2"
-            />
-            <text x="46" y={chestY + 3.5} textAnchor="end" fontSize="10" fontWeight="bold" fill={getStatusColor(upperZone?.status)}>
-              {isMale ? 'Chest' : 'Bust'}
-            </text>
-          </g>
-
-          {/* 2. Waist Marker */}
-          <g id="waistZoneMarker">
-            <circle cx={160 - waistWidth - 10} cy={waistY} r="5.5" fill={getStatusColor(waistZone?.status)} />
-            <circle cx={160 - waistWidth - 10} cy={waistY} r="8" fill="none" stroke={getStatusColor(waistZone?.status)} strokeWidth="1" opacity="0.6" />
-            <line
-              x1={160 - waistWidth - 15}
-              y1={waistY}
-              x2="52"
-              y2={waistY}
-              stroke={getStatusColor(waistZone?.status)}
-              strokeWidth="1.2"
-              strokeDasharray="2 2"
-            />
-            <text x="46" y={waistY + 3.5} textAnchor="end" fontSize="10" fontWeight="bold" fill={getStatusColor(waistZone?.status)}>
-              Waist
-            </text>
-          </g>
-
-          {/* 3. Hips Marker */}
-          <g id="hipZoneMarker">
-            <circle cx={160 - hipWidth - 10} cy={hipY} r="5.5" fill={getStatusColor(hipZone?.status)} />
-            <circle cx={160 - hipWidth - 10} cy={hipY} r="8" fill="none" stroke={getStatusColor(hipZone?.status)} strokeWidth="1" opacity="0.6" />
-            <line
-              x1={160 - hipWidth - 15}
-              y1={hipY}
-              x2="52"
-              y2={hipY}
-              stroke={getStatusColor(hipZone?.status)}
-              strokeWidth="1.2"
-              strokeDasharray="2 2"
-            />
-            <text x="46" y={hipY + 3.5} textAnchor="end" fontSize="10" fontWeight="bold" fill={getStatusColor(hipZone?.status)}>
-              Hips
-            </text>
-          </g>
-
-          {/* --- Hemline Level Indicator (Right Column) --- */}
-          <g id="hemlineDropMarker">
-            <line
-              x1="240"
-              y1={garmentDrop}
-              x2="280"
-              y2={garmentDrop}
-              stroke="#B58B45"
-              strokeWidth="1.8"
-            />
-            <circle cx="280" cy={garmentDrop} r="3.5" fill="#B58B45" />
-            <text x="278" y={garmentDrop - 5} textAnchor="end" fontSize="9" fontWeight="bold" fill="#5A3E2B">
-              Hemline ({fitAnalysis.hemlineLevel})
-            </text>
-          </g>
-        </svg>
+      {/* 2. Trying On Dress Banner */}
+      <div className="w-full flex items-center justify-between gap-2 px-3 py-1.5 bg-[#FAF4E8] border border-[#DED2C2] rounded-xl text-xs mb-1.5">
+        <div className="flex items-center gap-2 truncate">
+          <span
+            className="w-3.5 h-3.5 rounded-full border border-[#5A3E2B]/40 shadow-2xs shrink-0"
+            style={{ backgroundColor: dressColorHex }}
+          />
+          <span className="text-[#806F61] text-[11px] truncate">
+            Fitting: <strong className="text-[#5A3E2B] font-semibold">{dressName}</strong>
+          </span>
+        </div>
+        <span className="text-[10px] font-bold text-[#B58B45] shrink-0 uppercase tracking-wider">
+          Dress Color
+        </span>
       </div>
 
-      {/* 3. Bottom Description Card */}
-      <div className="w-full bg-[#FAF4E8] rounded-xl border border-[#DED2C2] p-2.5 text-center text-xs">
+      {/* 3. Studio Controls Header: View Mode & Skin Tone Selector */}
+      <div className="w-full flex items-center justify-between gap-2 px-1 py-1.5 bg-[#FAF4E8]/80 border border-[#DED2C2] rounded-2xl mb-1 text-xs">
+        {/* View Mode Toggle */}
+        <div className="flex items-center bg-[#EFE5D5] p-0.5 rounded-xl gap-0.5">
+          <button
+            type="button"
+            onClick={() => setViewMode('body')}
+            className={`px-2 py-1 rounded-lg text-[10px] font-bold transition-all flex items-center gap-1 ${
+              viewMode === 'body'
+                ? 'bg-[#5A3E2B] text-[#FFFDF8] shadow-xs'
+                : 'text-[#806F61] hover:text-[#2F241D]'
+            }`}
+          >
+            <User className="w-3 h-3" />
+            <span>Clean Body</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setViewMode('dress')}
+            className={`px-2 py-1 rounded-lg text-[10px] font-bold transition-all flex items-center gap-1 ${
+              viewMode === 'dress'
+                ? 'bg-[#5A3E2B] text-[#FFFDF8] shadow-xs'
+                : 'text-[#806F61] hover:text-[#2F241D]'
+            }`}
+          >
+            <Shield className="w-3 h-3" />
+            <span>Fit Dress</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setViewMode('heatmap')}
+            className={`px-2 py-1 rounded-lg text-[10px] font-bold transition-all flex items-center gap-1 ${
+              viewMode === 'heatmap'
+                ? 'bg-[#5A3E2B] text-[#FFFDF8] shadow-xs'
+                : 'text-[#806F61] hover:text-[#2F241D]'
+            }`}
+          >
+            <Layers className="w-3 h-3" />
+            <span>Heatmap</span>
+          </button>
+        </div>
+
+        {/* Skin Tone Palette Swatches */}
+        <div className="flex items-center gap-1.5">
+          <Palette className="w-3 h-3 text-[#806F61] hidden sm:block" />
+          <div className="flex items-center gap-1">
+            {SKIN_TONES.map((tone) => {
+              const isSelected = selectedSkinTone.id === tone.id;
+              return (
+                <button
+                  key={tone.id}
+                  type="button"
+                  title={tone.name}
+                  onClick={() => setSelectedSkinTone(tone)}
+                  style={{ backgroundColor: tone.hex }}
+                  className={`w-4 h-4 rounded-full border transition-all ${
+                    isSelected
+                      ? 'border-[#5A3E2B] scale-125 ring-2 ring-[#B58B45]/40 shadow-xs'
+                      : 'border-[#DED2C2] hover:scale-110 opacity-80 hover:opacity-100'
+                  }`}
+                />
+              );
+            })}
+          </div>
+        </div>
+      </div>
+
+      {/* 2.5 Pose Quick-Selector Toolbar (Cleanly positioned above canvas without blocking 3D avatar) */}
+      {onUpdateProfile && (
+        <div className="w-full flex items-center justify-between gap-1.5 bg-[#FAF4E8]/90 border border-[#DED2C2] p-1 rounded-xl text-xs my-0.5">
+          <span className="text-[10px] font-bold text-[#806F61] uppercase tracking-wider pl-1.5 shrink-0">
+            Pose:
+          </span>
+          <div className="flex items-center gap-1 overflow-x-auto py-0.5">
+            {AVATAR_POSES.map((poseItem) => {
+              const isActive = (profile.pose || 'NATURAL_SIDES') === poseItem.id;
+              return (
+                <button
+                  key={poseItem.id}
+                  type="button"
+                  onClick={() => onUpdateProfile({ pose: poseItem.id })}
+                  title={poseItem.description}
+                  className={`px-2 py-0.5 rounded-lg text-[10px] font-bold transition-all flex items-center gap-1 shrink-0 cursor-pointer ${
+                    isActive
+                      ? 'bg-[#5A3E2B] text-[#FFFDF8] shadow-xs'
+                      : 'text-[#806F61] hover:text-[#2F241D] hover:bg-[#EFE5D5]'
+                  }`}
+                >
+                  <span>{poseItem.icon}</span>
+                  <span className="whitespace-nowrap">{poseItem.shortLabel}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* 3. 3D Real-time Human Avatar Canvas */}
+      <div className="w-full relative my-1">
+        <HumanAvatar3DScene
+          profile={profile}
+          fitAnalysis={fitAnalysis}
+          selectedSize={selectedSize}
+          dressName={dressName}
+          dressColorHex={dressColorHex}
+          dressLengthInches={dressLengthInches}
+          selectedSkinTone={selectedSkinTone}
+          viewMode={viewMode}
+          onUpdateProfile={onUpdateProfile}
+        />
+
+        {/* Floating Anatomical Landmark Tags */}
+        <div className="absolute top-4 left-3 space-y-2 pointer-events-none text-[10px]">
+          <div className="flex items-center gap-1.5 bg-[#FFFDF8]/90 backdrop-blur-xs px-2 py-0.5 rounded-md border border-[#DED2C2] shadow-2xs">
+            <span
+              className="w-2 h-2 rounded-full"
+              style={{ backgroundColor: getStatusColor(upperZone?.status) }}
+            />
+            <span className="font-semibold text-[#5A3E2B]">
+              {isMale ? 'Chest' : 'Bust'}: {profile.bustInches}"
+            </span>
+          </div>
+
+          <div className="flex items-center gap-1.5 bg-[#FFFDF8]/90 backdrop-blur-xs px-2 py-0.5 rounded-md border border-[#DED2C2] shadow-2xs">
+            <span
+              className="w-2 h-2 rounded-full"
+              style={{ backgroundColor: getStatusColor(waistZone?.status) }}
+            />
+            <span className="font-semibold text-[#5A3E2B]">
+              Waist: {profile.waistInches}"
+            </span>
+          </div>
+
+          <div className="flex items-center gap-1.5 bg-[#FFFDF8]/90 backdrop-blur-xs px-2 py-0.5 rounded-md border border-[#DED2C2] shadow-2xs">
+            <span
+              className="w-2 h-2 rounded-full"
+              style={{ backgroundColor: getStatusColor(hipZone?.status) }}
+            />
+            <span className="font-semibold text-[#5A3E2B]">
+              Hips: {profile.hipInches}"
+            </span>
+          </div>
+
+          <div className="flex items-center gap-1.5 bg-[#FFFDF8]/90 backdrop-blur-xs px-2 py-0.5 rounded-md border border-[#DED2C2] shadow-2xs">
+            <span className="w-2 h-2 rounded-full bg-[#B58B45]" />
+            <span className="font-semibold text-[#5A3E2B]">
+              Shoulders: {profile.shoulderInches || (isMale ? 18 : 15.5)}"
+            </span>
+          </div>
+
+          <div className="flex items-center gap-1.5 bg-[#FFFDF8]/90 backdrop-blur-xs px-2 py-0.5 rounded-md border border-[#DED2C2] shadow-2xs">
+            <span className="w-2 h-2 rounded-full bg-[#806F61]" />
+            <span className="font-semibold text-[#5A3E2B]">
+              Pose: {AVATAR_POSES.find((p) => p.id === (profile.pose || 'NATURAL_SIDES'))?.shortLabel}
+            </span>
+          </div>
+        </div>
+
+        {/* Floating Hemline Indicator Tag */}
+        <div className="absolute top-4 right-3 pointer-events-none text-[10px]">
+          <div className="flex items-center gap-1.5 bg-[#FFFDF8]/90 backdrop-blur-xs px-2.5 py-0.5 rounded-md border border-[#B58B45]/50 shadow-2xs">
+            <span className="w-1.5 h-1.5 rounded-full bg-[#B58B45]" />
+            <span className="font-bold text-[#5A3E2B]">
+              Hemline: {fitAnalysis.hemlineLevel}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* 4. Fine-Tune Chest, Shoulders, Legs & Hands Shape Bar */}
+      {onUpdateProfile && (
+        <div className="w-full mt-2 bg-[#FAF4E8] rounded-2xl border border-[#DED2C2] overflow-hidden text-xs">
+          <button
+            type="button"
+            onClick={() => setIsFineTuningOpen(!isFineTuningOpen)}
+            className="w-full px-3 py-2 flex items-center justify-between font-bold text-[#5A3E2B] hover:bg-[#EFE5D5]/60 transition-colors cursor-pointer"
+          >
+            <div className="flex items-center gap-1.5">
+              <Sliders className="w-3.5 h-3.5 text-[#B58B45]" />
+              <span>Control Shape, Legs, Hands & Avatar Poses</span>
+            </div>
+            <span className="text-[11px] font-semibold text-[#806F61]">
+              {isFineTuningOpen ? 'Hide Controls ▲' : 'Tune Shape ▼'}
+            </span>
+          </button>
+
+          {isFineTuningOpen && (
+            <div className="p-3 pt-2 border-t border-[#DED2C2] space-y-3 bg-[#FFFDF8]">
+              {/* Shoulder Width Slider */}
+              <div className="space-y-1">
+                <div className="flex items-center justify-between text-[11px]">
+                  <span className="font-semibold text-[#2F241D]">Shoulder Width (Bi-Deltoid):</span>
+                  <span className="font-bold text-[#5A3E2B]">
+                    {profile.shoulderInches || (isMale ? 18 : 15.5)}" •{' '}
+                    <span className="font-normal text-[#806F61]">
+                      {(profile.shoulderInches || 18) <= 16.5 ? 'Narrow / Slender Frame' : (profile.shoulderInches || 18) <= 19.5 ? 'Athletic V-Frame' : 'Broad Muscular'}
+                    </span>
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min="14"
+                  max="22"
+                  step="0.5"
+                  value={profile.shoulderInches || (isMale ? 18 : 15.5)}
+                  onChange={(e) => onUpdateProfile({ shoulderInches: Number(e.target.value) })}
+                  className="w-full accent-[#5A3E2B] cursor-pointer h-1.5 bg-[#EFE5D5] rounded-lg"
+                />
+              </div>
+
+              {/* Chest Breadth & Pectoral Depth Slider */}
+              <div className="space-y-1">
+                <div className="flex items-center justify-between text-[11px]">
+                  <span className="font-semibold text-[#2F241D]">Chest Circumference & Pecs:</span>
+                  <span className="font-bold text-[#5A3E2B]">
+                    {profile.bustInches}" •{' '}
+                    <span className="font-normal text-[#806F61]">
+                      {profile.bustInches <= 35 ? 'Lean Ribcage / Flat Pecs' : profile.bustInches <= 41 ? 'Defined Athletic' : 'Powerful Full Pecs'}
+                    </span>
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min="30"
+                  max="48"
+                  step="0.5"
+                  value={profile.bustInches}
+                  onChange={(e) => onUpdateProfile({ bustInches: Number(e.target.value) })}
+                  className="w-full accent-[#5A3E2B] cursor-pointer h-1.5 bg-[#EFE5D5] rounded-lg"
+                />
+              </div>
+
+              {/* Core Waist Taper Slider */}
+              <div className="space-y-1">
+                <div className="flex items-center justify-between text-[11px]">
+                  <span className="font-semibold text-[#2F241D]">Core Waist Taper:</span>
+                  <span className="font-bold text-[#5A3E2B]">
+                    {profile.waistInches}" •{' '}
+                    <span className="font-normal text-[#806F61]">
+                      {profile.waistInches <= 28 ? 'Slender Trim Waist' : profile.waistInches <= 33 ? 'Athletic Core' : 'Classic Fit'}
+                    </span>
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min="24"
+                  max="42"
+                  step="0.5"
+                  value={profile.waistInches}
+                  onChange={(e) => onUpdateProfile({ waistInches: Number(e.target.value) })}
+                  className="w-full accent-[#5A3E2B] cursor-pointer h-1.5 bg-[#EFE5D5] rounded-lg"
+                />
+              </div>
+
+              {/* Legs & Thighs Slimming / Bulking Slider */}
+              <div className="space-y-1">
+                <div className="flex items-center justify-between text-[11px]">
+                  <span className="font-semibold text-[#2F241D]">Legs & Thighs (Slim vs Bulked):</span>
+                  <span className="font-bold text-[#5A3E2B]">
+                    {profile.legInches || (isMale ? 22 : 21)}" •{' '}
+                    <span className="font-normal text-[#806F61]">
+                      {(profile.legInches || 22) <= 19.5
+                        ? 'Ultra Slim / Skinny Legs'
+                        : (profile.legInches || 22) <= 23.5
+                        ? 'Tailored Athletic Legs'
+                        : 'Bulked Muscular Quads & Calves'}
+                    </span>
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min="16"
+                  max="28"
+                  step="0.5"
+                  value={profile.legInches || (isMale ? 22 : 21)}
+                  onChange={(e) => onUpdateProfile({ legInches: Number(e.target.value) })}
+                  className="w-full accent-[#5A3E2B] cursor-pointer h-1.5 bg-[#EFE5D5] rounded-lg"
+                />
+              </div>
+
+              {/* Hand & Arm Stance Slider */}
+              <div className="space-y-1">
+                <div className="flex items-center justify-between text-[11px]">
+                  <span className="font-semibold text-[#2F241D]">Hand & Arm Stance (Proximity to Body):</span>
+                  <span className="font-bold text-[#5A3E2B]">
+                    {profile.armAngle !== undefined ? profile.armAngle : (profile.archetype === 'SKINNY_SLENDER' ? 10 : 25)}% •{' '}
+                    <span className="font-normal text-[#806F61]">
+                      {(profile.armAngle !== undefined ? profile.armAngle : 25) <= 15
+                        ? 'Resting at Sides / Thighs (Photo Match)'
+                        : (profile.armAngle !== undefined ? profile.armAngle : 25) <= 45
+                        ? 'Relaxed Low Stance'
+                        : 'Open A-Pose'}
+                    </span>
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min="0"
+                  max="100"
+                  step="1"
+                  value={profile.armAngle !== undefined ? profile.armAngle : (profile.archetype === 'SKINNY_SLENDER' ? 10 : 25)}
+                  onChange={(e) => onUpdateProfile({ armAngle: Number(e.target.value) })}
+                  className="w-full accent-[#5A3E2B] cursor-pointer h-1.5 bg-[#EFE5D5] rounded-lg"
+                />
+              </div>
+
+              {/* Hand & Wrist Build Slider */}
+              <div className="space-y-1">
+                <div className="flex items-center justify-between text-[11px]">
+                  <span className="font-semibold text-[#2F241D]">Hand & Wrist Build (Slim vs Muscular):</span>
+                  <span className="font-bold text-[#5A3E2B]">
+                    {profile.armThickness !== undefined ? profile.armThickness : (profile.archetype === 'SKINNY_SLENDER' ? 76 : 100)}% •{' '}
+                    <span className="font-normal text-[#806F61]">
+                      {(profile.armThickness !== undefined ? profile.armThickness : 100) <= 80
+                        ? 'Ultra Slender Wrists & Skinny Hands'
+                        : (profile.armThickness !== undefined ? profile.armThickness : 100) <= 105
+                        ? 'Natural Balanced Hands'
+                        : 'Broad Muscular Forearms & Hands'}
+                    </span>
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min="70"
+                  max="130"
+                  step="1"
+                  value={profile.armThickness !== undefined ? profile.armThickness : (profile.archetype === 'SKINNY_SLENDER' ? 76 : 100)}
+                  onChange={(e) => onUpdateProfile({ armThickness: Number(e.target.value) })}
+                  className="w-full accent-[#5A3E2B] cursor-pointer h-1.5 bg-[#EFE5D5] rounded-lg"
+                />
+              </div>
+
+              {/* Avatar Pose Selection Section */}
+              <div className="space-y-2 pt-2 border-t border-[#DED2C2]">
+                <div className="flex items-center justify-between text-[11px]">
+                  <span className="font-semibold text-[#2F241D]">Choose 3D Avatar Pose & Stance:</span>
+                  <span className="font-bold text-[#5A3E2B]">
+                    {AVATAR_POSES.find((p) => p.id === (profile.pose || 'NATURAL_SIDES'))?.label}
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
+                  {AVATAR_POSES.map((poseItem) => {
+                    const isSelected = (profile.pose || 'NATURAL_SIDES') === poseItem.id;
+                    return (
+                      <button
+                        key={poseItem.id}
+                        type="button"
+                        onClick={() => onUpdateProfile({ pose: poseItem.id })}
+                        className={`p-2 rounded-xl text-left border transition-all cursor-pointer ${
+                          isSelected
+                            ? 'bg-[#E8D5B5]/60 border-[#5A3E2B] shadow-xs ring-1 ring-[#5A3E2B]/20'
+                            : 'bg-[#FFFDF8] border-[#DED2C2] hover:border-[#5A3E2B]/60 hover:bg-[#FAF4E8]'
+                        }`}
+                      >
+                        <div className="flex items-center gap-1.5 mb-0.5">
+                          <span className="text-sm">{poseItem.icon}</span>
+                          <span className="font-bold text-[11px] text-[#2F241D]">
+                            {poseItem.label}
+                          </span>
+                        </div>
+                        <p className="text-[9px] text-[#806F61] line-clamp-1">
+                          {poseItem.description}
+                        </p>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* 5. Bottom Description Card */}
+      <div className="w-full bg-[#FAF4E8] rounded-xl border border-[#DED2C2] p-2.5 text-center text-xs mt-2">
         <p className="font-semibold text-[#5A3E2B]">
           {fitAnalysis.hemlineDropDescription}
         </p>

@@ -1,8 +1,56 @@
 export type GenderCategory = 'FEMALE' | 'MALE';
 
 export type FemaleArchetype = 'HOURGLASS' | 'PEAR' | 'RECTANGLE' | 'APPLE' | 'PETITE';
-export type MaleArchetype = 'ATHLETIC_V_TAPER' | 'BROAD_CHEST' | 'SLIM_RECTANGLE' | 'RELAXED_FIT';
+export type MaleArchetype = 'SKINNY_SLENDER' | 'SLIM_RECTANGLE' | 'ATHLETIC_V_TAPER' | 'BROAD_CHEST' | 'RELAXED_FIT';
 export type SilhouetteArchetype = FemaleArchetype | MaleArchetype;
+
+export type AvatarPose = 'NATURAL_SIDES' | 'RELAXED_STANCE' | 'FASHION_RUNWAY' | 'OPEN_A_POSE' | 'TAILORED_FIT';
+
+export interface AvatarPoseInfo {
+  id: AvatarPose;
+  label: string;
+  shortLabel: string;
+  icon: string;
+  description: string;
+}
+
+export const AVATAR_POSES: AvatarPoseInfo[] = [
+  {
+    id: 'NATURAL_SIDES',
+    label: 'Natural Standing',
+    shortLabel: 'Natural',
+    icon: '🧍',
+    description: 'Relaxed stance with arms resting naturally alongside hips & thighs',
+  },
+  {
+    id: 'RELAXED_STANCE',
+    label: 'Relaxed Stance',
+    shortLabel: 'Relaxed',
+    icon: '🕺',
+    description: 'Casual contemporary posture with arms slightly off the hips',
+  },
+  {
+    id: 'FASHION_RUNWAY',
+    label: 'Runway Stride',
+    shortLabel: 'Runway',
+    icon: '🚶',
+    description: 'Dynamic walking contrapposto showing fabric movement and drape',
+  },
+  {
+    id: 'OPEN_A_POSE',
+    label: 'Open A-Pose',
+    shortLabel: 'A-Pose',
+    icon: '🙆',
+    description: 'Flared arms for complete 360° inspection of sleeves and garment ease',
+  },
+  {
+    id: 'TAILORED_FIT',
+    label: 'Tailored Fit',
+    shortLabel: 'Tailored',
+    icon: '📐',
+    description: 'Upright streamlined silhouette for evaluating outerwear & tailored drape',
+  },
+];
 
 export interface CustomerBodyProfile {
   gender: GenderCategory;
@@ -11,6 +59,10 @@ export interface CustomerBodyProfile {
   waistInches: number;  // e.g. 28
   hipInches: number;    // e.g. 38
   shoulderInches?: number; // e.g. 18 for men
+  legInches?: number;   // e.g. 18.5 for slender, 25 for muscular quads
+  armAngle?: number;    // 0 (resting alongside hips) to 100 (open A-pose)
+  armThickness?: number; // 70 (slender/skinny arms) to 130 (muscular arms)
+  pose?: AvatarPose;    // Active 3D avatar pose
   archetype: SilhouetteArchetype;
   photoScanned: boolean;
   lastUpdated: string;
@@ -37,7 +89,7 @@ const STORAGE_KEY = 'haute_customer_body_profile';
 
 export const FEMALE_ARCHETYPE_PRESETS: Record<
   FemaleArchetype,
-  { label: string; description: string; bust: number; waist: number; hips: number; shoulder?: number }
+  { label: string; description: string; bust: number; waist: number; hips: number; shoulder?: number; legInches?: number; armAngle?: number; armThickness?: number }
 > = {
   HOURGLASS: {
     label: 'Hourglass',
@@ -46,6 +98,9 @@ export const FEMALE_ARCHETYPE_PRESETS: Record<
     waist: 27,
     hips: 37,
     shoulder: 15.5,
+    legInches: 21.5,
+    armAngle: 25,
+    armThickness: 95,
   },
   PEAR: {
     label: 'Pear / Triangle',
@@ -54,6 +109,9 @@ export const FEMALE_ARCHETYPE_PRESETS: Record<
     waist: 28,
     hips: 40,
     shoulder: 14.5,
+    legInches: 23.5,
+    armAngle: 30,
+    armThickness: 92,
   },
   RECTANGLE: {
     label: 'Athletic / Ruler',
@@ -62,6 +120,9 @@ export const FEMALE_ARCHETYPE_PRESETS: Record<
     waist: 30,
     hips: 36,
     shoulder: 16,
+    legInches: 20.5,
+    armAngle: 20,
+    armThickness: 95,
   },
   APPLE: {
     label: 'Apple / Round',
@@ -70,6 +131,9 @@ export const FEMALE_ARCHETYPE_PRESETS: Record<
     waist: 33,
     hips: 38,
     shoulder: 15.5,
+    legInches: 20.5,
+    armAngle: 25,
+    armThickness: 100,
   },
   PETITE: {
     label: 'Petite',
@@ -78,20 +142,48 @@ export const FEMALE_ARCHETYPE_PRESETS: Record<
     waist: 25,
     hips: 34,
     shoulder: 14,
+    legInches: 19.0,
+    armAngle: 15,
+    armThickness: 80,
   },
 };
 
 export const MALE_ARCHETYPE_PRESETS: Record<
   MaleArchetype,
-  { label: string; description: string; bust: number; waist: number; hips: number; shoulder?: number }
+  { label: string; description: string; bust: number; waist: number; hips: number; shoulder?: number; legInches?: number; armAngle?: number; armThickness?: number }
 > = {
+  SKINNY_SLENDER: {
+    label: 'Lean / Slender Frame',
+    description: 'Ultra-lean, narrow silhouette with slender ribcage, waist, and limbs',
+    bust: 33,
+    waist: 26,
+    hips: 33,
+    shoulder: 15.5,
+    legInches: 18.5,
+    armAngle: 15,
+    armThickness: 76,
+  },
+  SLIM_RECTANGLE: {
+    label: 'Slim / Lean Tailored',
+    description: 'Linear contemporary silhouette with balanced, tailored proportions',
+    bust: 36,
+    waist: 28,
+    hips: 35,
+    shoulder: 17.0,
+    legInches: 20.5,
+    armAngle: 20,
+    armThickness: 88,
+  },
   ATHLETIC_V_TAPER: {
     label: 'Athletic V-Taper',
     description: 'Broad sculpted shoulders tapering down to a lean, defined waistline',
-    bust: 42,
-    waist: 32,
-    hips: 38,
+    bust: 41,
+    waist: 31,
+    hips: 37,
     shoulder: 19.5,
+    legInches: 23.0,
+    armAngle: 30,
+    armThickness: 105,
   },
   BROAD_CHEST: {
     label: 'Broad / Muscular',
@@ -100,28 +192,26 @@ export const MALE_ARCHETYPE_PRESETS: Record<
     waist: 35,
     hips: 40,
     shoulder: 20.5,
-  },
-  SLIM_RECTANGLE: {
-    label: 'Slim / Lean Tailored',
-    description: 'Linear contemporary silhouette with balanced, tailored proportions',
-    bust: 38,
-    waist: 30,
-    hips: 36,
-    shoulder: 17.5,
+    legInches: 25.5,
+    armAngle: 40,
+    armThickness: 122,
   },
   RELAXED_FIT: {
     label: 'Classic / Relaxed',
     description: 'Generous cut through chest and midsection for comfort drape',
     bust: 42,
-    waist: 37,
+    waist: 36,
     hips: 41,
     shoulder: 18.5,
+    legInches: 23.5,
+    armAngle: 25,
+    armThickness: 105,
   },
 };
 
 export const ARCHETYPE_PRESETS: Record<
   SilhouetteArchetype,
-  { label: string; description: string; bust: number; waist: number; hips: number; shoulder?: number }
+  { label: string; description: string; bust: number; waist: number; hips: number; shoulder?: number; legInches?: number; armAngle?: number; armThickness?: number }
 > = {
   ...FEMALE_ARCHETYPE_PRESETS,
   ...MALE_ARCHETYPE_PRESETS,
@@ -144,8 +234,8 @@ export const MALE_GARMENT_SPECS_BY_SIZE: Record<
   string,
   { bust: number; waist: number; hips: number; length: number }
 > = {
-  XS: { bust: 36, waist: 29, hips: 35, length: 30 },
-  S: { bust: 38, waist: 31, hips: 37, length: 30.5 },
+  XS: { bust: 35, waist: 28, hips: 34, length: 30 },
+  S: { bust: 37, waist: 30, hips: 36, length: 30.5 },
   M: { bust: 40, waist: 33, hips: 39, length: 31 },
   L: { bust: 43, waist: 36, hips: 42, length: 32 },
   XL: { bust: 46, waist: 39, hips: 45, length: 32.5 },
@@ -177,6 +267,18 @@ export const bodyProfileService = {
         if (!parsed.shoulderInches) {
           parsed.shoulderInches = parsed.gender === 'MALE' ? 19 : 15.5;
         }
+        if (!parsed.legInches) {
+          parsed.legInches = parsed.gender === 'MALE' ? 22 : 21;
+        }
+        if (parsed.armAngle === undefined) {
+          parsed.armAngle = parsed.archetype === 'SKINNY_SLENDER' ? 10 : 25;
+        }
+        if (parsed.armThickness === undefined) {
+          parsed.armThickness = parsed.archetype === 'SKINNY_SLENDER' ? 76 : 100;
+        }
+        if (!parsed.pose || !['NATURAL_SIDES', 'RELAXED_STANCE', 'FASHION_RUNWAY', 'OPEN_A_POSE', 'TAILORED_FIT'].includes(parsed.pose)) {
+          parsed.pose = 'NATURAL_SIDES';
+        }
         return parsed;
       }
     } catch {
@@ -190,6 +292,10 @@ export const bodyProfileService = {
       waistInches: 28,
       hipInches: 38,
       shoulderInches: 15.5,
+      legInches: 21,
+      armAngle: 25,
+      armThickness: 95,
+      pose: 'NATURAL_SIDES',
       archetype: 'HOURGLASS',
       photoScanned: false,
       lastUpdated: new Date().toISOString(),
